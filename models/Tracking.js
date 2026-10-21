@@ -1,22 +1,28 @@
 const mongoose = require("mongoose");
 
 const timelineSchema = new mongoose.Schema({
-  message: { type: String, required: true },
+  message:  { type: String, required: true },
   location: { type: String, required: true },
-  date: { type: String, required: true }, // You could use Date type if you prefer
-  time: { type: String, required: true },
+  date:     { type: String, required: true },
+  time:     { type: String, required: false, default: "" }, // Optional – not required so older records don't break
+  status:   { type: String, required: false, default: "" }, // Snapshot of status at this event
 });
 
 const trackingSchema = new mongoose.Schema({
-  trackingId: { type: String, required: true, unique: true },
-  status: { type: String, required: true, default: "Pending" },
-  currentLocation: { type: String, required: true },
-  expectedDelivery: { type: Date }, // Optional, can be null
-  lastUpdated: { type: Date, default: Date.now },
-  timeline: { type: [timelineSchema], default: [] }, // Always returns an array
+  trackingId:       { type: String, required: true, unique: true, trim: true },
+  status:           { type: String, required: true, default: "Pending" },
+  currentLocation:  { type: String, required: true },
+  origin:           { type: String, default: "" },
+  destination:      { type: String, default: "" },
+  senderName:       { type: String, default: "" },
+  recipientName:    { type: String, default: "" },
+  packageDescription: { type: String, default: "" },
+  expectedDelivery: { type: Date },
+  lastUpdated:      { type: Date, default: Date.now },
+  timeline:         { type: [timelineSchema], default: [] },
 });
 
-// Optional: automatically return JSON without __v
+// Automatically return clean JSON without __v
 trackingSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
