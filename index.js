@@ -15,7 +15,7 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 const allowedOrigins = [
   "http://localhost:5173",          // Vite dev server
   "http://localhost:3000",
-  "https://swiftexpress.vercel.app", // Replace with your actual Vercel URL
+  "https://swift-express-frontend.vercel.app", // Replace with your actual Vercel URL
   process.env.FRONTEND_URL,         // Set in production environment
 ].filter(Boolean); // Remove undefined/null values
 
