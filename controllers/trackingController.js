@@ -18,7 +18,7 @@ const VALID_STATUSES = [
 ];
 
 // ------------------------------
-// Create new shipment
+// Create new shipment (Admin or Staff)
 // ------------------------------
 exports.createTracking = async (req, res) => {
   try {
@@ -40,10 +40,14 @@ exports.createTracking = async (req, res) => {
       return res.status(409).json({ error: "Tracking ID already exists. Use a different ID." });
     }
 
-    // Build document — spread req.body, override trackingId trimmed
+    // Build document — spread req.body, attach creator info
     const trackingData = {
       ...req.body,
       trackingId: trackingId.trim(),
+      createdBy: req.adminId || null,
+      createdByName: req.user?.fullName || "Staff",
+      createdByRole: req.userRole || "staff",
+      lastUpdated: new Date(),
     };
 
     const tracking = new Tracking(trackingData);
@@ -69,7 +73,8 @@ exports.createTracking = async (req, res) => {
 };
 
 // ------------------------------
-// Get all shipments (admin)
+// Get all shipments (Admin or Staff)
+// Supports search, pagination, status filter, and onlyMine filter
 // ------------------------------
 exports.getAllTrackings = async (req, res) => {
   try {
@@ -77,13 +82,37 @@ exports.getAllTrackings = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip  = (page - 1) * limit;
 
-    const search = req.query.search || "";
-    const filter = search
-      ? { trackingId: { $regex: search, $options: "i" } }
-      : {};
+    const filter = {};
+
+    // Filter by search (trackingId, recipientName, or senderName)
+    const search = req.query.search ? req.query.search.trim() : "";
+    if (search) {
+      filter.$or = [
+        { trackingId: { $regex: search, $options: "i" } },
+        { recipientName: { $regex: search, $options: "i" } },
+        { senderName: { $regex: search, $options: "i" } },
+        { currentLocation: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Filter by specific status
+    if (req.query.status && req.query.status.trim()) {
+      filter.status = req.query.status.trim();
+    }
+
+    // Filter for specific staff or "onlyMine"
+    if (req.query.onlyMine === "true" && req.adminId) {
+      filter.createdBy = req.adminId;
+    } else if (req.query.staffId && req.query.staffId.trim()) {
+      filter.createdBy = req.query.staffId.trim();
+    }
 
     const [trackings, total] = await Promise.all([
-      Tracking.find(filter).sort({ lastUpdated: -1 }).skip(skip).limit(limit),
+      Tracking.find(filter)
+        .sort({ lastUpdated: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("createdBy", "fullName email role"),
       Tracking.countDocuments(filter),
     ]);
 
@@ -91,7 +120,7 @@ exports.getAllTrackings = async (req, res) => {
       success: true,
       total,
       page,
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(total / limit) || 1,
       trackings,
     });
   } catch (err) {
@@ -101,7 +130,7 @@ exports.getAllTrackings = async (req, res) => {
 };
 
 // ------------------------------
-// Get tracking info by trackingId
+// Get tracking info by trackingId (Public or internal)
 // ------------------------------
 exports.getTracking = async (req, res) => {
   try {
@@ -111,7 +140,10 @@ exports.getTracking = async (req, res) => {
       return res.status(400).json({ error: "Tracking ID is required." });
     }
 
-    const data = await Tracking.findOne({ trackingId: trackingId.trim() });
+    const data = await Tracking.findOne({ trackingId: trackingId.trim() }).populate(
+      "createdBy",
+      "fullName email role"
+    );
 
     if (!data) {
       return res.status(404).json({ error: "No shipment found with that tracking ID." });
@@ -136,18 +168,24 @@ exports.updateTracking = async (req, res) => {
     }
 
     // Build the $set portion
-    const setData = { lastUpdated: new Date() };
+    const setData = {
+      lastUpdated: new Date(),
+      updatedBy: req.user?.fullName || "Staff",
+    };
 
     if (req.body.status !== undefined)           setData.status          = req.body.status;
     if (req.body.currentLocation !== undefined)  setData.currentLocation = req.body.currentLocation;
     if (req.body.expectedDelivery !== undefined) setData.expectedDelivery = req.body.expectedDelivery;
     if (req.body.origin !== undefined)           setData.origin          = req.body.origin;
     if (req.body.destination !== undefined)      setData.destination     = req.body.destination;
+    if (req.body.senderName !== undefined)       setData.senderName      = req.body.senderName;
+    if (req.body.recipientName !== undefined)    setData.recipientName   = req.body.recipientName;
+    if (req.body.packageDescription !== undefined) setData.packageDescription = req.body.packageDescription;
 
     // Build update operation
     const updateOp = { $set: setData };
 
-    // Add timeline event if provided (frontend sends it as `timeline` object — not wrapped in $push)
+    // Add timeline event if provided
     if (req.body.timeline && typeof req.body.timeline === "object" && !Array.isArray(req.body.timeline)) {
       updateOp.$push = { timeline: req.body.timeline };
     }
@@ -176,16 +214,22 @@ exports.updateTracking = async (req, res) => {
 };
 
 // ------------------------------
-// Delete a shipment (admin only)
+// Delete a shipment (Admin or Creator)
 // ------------------------------
 exports.deleteTracking = async (req, res) => {
   try {
     const { trackingId } = req.params;
 
-    const deleted = await Tracking.findOneAndDelete({ trackingId: trackingId.trim() });
+    const query = { trackingId: trackingId.trim() };
+    // If not admin, only allow if created by this user
+    if (req.userRole !== "admin") {
+      query.createdBy = req.adminId;
+    }
+
+    const deleted = await Tracking.findOneAndDelete(query);
 
     if (!deleted) {
-      return res.status(404).json({ error: "No shipment found with that tracking ID." });
+      return res.status(404).json({ error: "Shipment not found or insufficient permission to delete." });
     }
 
     res.json({ success: true, message: "Shipment deleted successfully." });

@@ -2,11 +2,15 @@ const mongoose = require("mongoose");
 
 const connectDB = async () => {
     try {
-        await mongoose.connect(process.env.MONGODB);
+        const uri = process.env.MONGODB || process.env.MONGODB_URI;
+        if (!uri) {
+            throw new Error("MongoDB URI is not set in environment variables");
+        }
+        await mongoose.connect(uri);
         console.log("MongoDB Connected Successfully");
     } catch (err) {
-        console.log(err);
-        process.exit(1);
+        console.error("MongoDB Connection Error:", err.message);
+        throw err;
     }
 };
 

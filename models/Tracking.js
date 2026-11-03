@@ -20,6 +20,10 @@ const trackingSchema = new mongoose.Schema({
   expectedDelivery: { type: Date },
   lastUpdated:      { type: Date, default: Date.now },
   timeline:         { type: [timelineSchema], default: [] },
+  createdBy:        { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
+  createdByName:    { type: String, default: "" },
+  createdByRole:    { type: String, default: "admin" },
+  updatedBy:        { type: String, default: "" },
 });
 
 // Automatically return clean JSON without __v
